@@ -7,3 +7,14 @@ metadata:
 spec:
   url: https://sky.jfrog.io/sky/helm/
   interval: 5m
+  secretRef:
+    name: jfrog
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jfrog
+  namespace: flux-system
+data:
+  username: Y29vcGVybWlj
+  password: QUtDcDVkS3NlR0VMREZGYnMzSlVReFpKTURMN2NwMWNpWnNIanZtZE1WalBVQ3FQaldzWDlrMjlIZ2g1WDluQnJFYkUyVm5BTg==
