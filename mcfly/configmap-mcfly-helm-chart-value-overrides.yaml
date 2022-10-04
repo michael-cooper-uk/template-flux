@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: mcfly-helm-chart-value-overrides
+  namespace: mcfly
+data:
+  values.yaml: |-
+    nameOverride: "mcfly"
+    fullnameOverride: "mcfly"
+
+    additionalLabels:
+      version: "main-251"
+
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 4
+      targetCPUUtilization: 60
+      targetMemoryUtilization: 75
+
+    service:
+      type: ClusterIP
+      ports:
+        - name: http
+          port: 80
+          targetPort: http-proxy
+
+    serviceMonitor:
+      enabled: false
+      metrics:
+        - port: http
+          path: /metrics
+          interval: 10s
+
+    defaultAlerts:
+        enabled: true
+        slackChannel: "oceanus-alerts-nonprod"
+        averageRequestDuration:
+          enabled: true
+          samplingRange: 5m
+          threshold: "1"
+          runbookUrl: "https://github.com/sky-uk/gdp-helm-charts/wiki/Default-Alerts"
+        longRequestPercentage:
+          enabled: true
+          samplingRange: 5m
+          bucket: "1"
+          traefikBucket: "1.2"
+          nginxBucket: "1"
+          istioBucket: "1000"
+          threshold: "0.95"
+          runbookUrl: "https://github.com/sky-uk/gdp-helm-charts/wiki/Default-Alerts"
+        highErrorRate:
+          enabled: true
+          samplingRange: 5m
+          threshold: "0.05"
+          runbookUrl: "https://github.com/sky-uk/gdp-helm-charts/wiki/Default-Alerts"
+        criticalErrorRate:
+          enabled: true
+          samplingRange: 5m
+          threshold: "0.05"
+          runbookUrl: "https://github.com/sky-uk/gdp-helm-charts/wiki/Default-Alerts"
+
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy-oceanusorigin.oceanus-services.svc.cluster.local/oauth2/auth
+        nginx.ingress.kubernetes.io/auth-signin: "https://auth2.dev.oceanusorigin.com/oauth2/start"
+      path: /
+      hosts:
+        - host: "mcfly.dev.oceanusorigin.com"
+      tls:
+        - secretName: star-oceanusorigin-tls-secret
+          hosts:
+            - "mcfly.dev.oceanusorigin.com"
+
+    deployment:
+      replicas: 3
+      containers:
+        - name: "mcfly-oceanus"
+          image:
+            repository: "eu.gcr.io/oceanus-235213/mcfly-oceanus"
+            tag: "main-251"
+          resources:
+            limits:
+              cpu: 1
+              memory: 512Mi
+            requests:
+              cpu: 1m
+              memory: 512Mi
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          liveness:
+            tcpSocket:
+              enabled: true
+            portName: http
+          readiness:
+            tcpSocket:
+              enabled: true
+            portName: http
+
+        - name: nginx-proxy
+          image:
+            repository: nginx
+            tag: 1.22.0
+          resources:
+            limits:
+              cpu: 1
+              memory: 512Mi
+            requests:
+              cpu: 1
+              memory: 512Mi
+          ports:
+            - name: http-proxy
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: "/etc/nginx"
+          liveness:
+            portName: http-proxy
+          readiness:
+            portName: http-proxy
+
+      volumes:
+          - name: nginx-conf
+            volumeSpec:
+              configMap:
+                name: proxy-configmap
+                items:
+                  - key: nginx.conf
+                    path: nginx.conf
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: instance-type
+                    operator: In
+                    values:
+                      - app
+
+    configMaps:
+      - name: proxy-configmap
+        data:
+          nginx.conf: |
+            user  nginx;
+            worker_processes  1;
+            pcre_jit on;
+            thread_pool default threads=128 max_queue=256;
+            timer_resolution 1s;
+            error_log  /var/log/nginx/error.log warn;
+            pid        /var/run/nginx.pid;
+            events {
+                worker_connections 2048;
+                worker_aio_requests 128;
+                use epoll;
+            }
+            http {
+                log_format json_ecs escape=json
+                  '{'
+                    '"ecs.version":"1.7.0",'
+                    '"@timestamp":"$time_iso8601",'
+                    '"url.path":"$request_uri",'
+                    '"user.id":"$remote_user",'
+                    '"http.request.method":"$request_method",'
+                    '"http.response.status_code": "$status",'
+                    '"http.response.bytes":"$bytes_sent",'
+                    '"http.response.body.bytes":"$body_bytes_sent",'
+                    '"http.request.bytes":"$request_length",'
+                    '"event.duration":"$request_time",'
+                    '"http.request.referrer":"$http_referer",'
+                    '"user_agent.original":"$http_user_agent",'
+                    '"client.address":"$proxy_add_x_forwarded_for"'
+                  '}';
+                access_log  /var/log/nginx/access.log json_ecs;
+                server {
+                    listen 8080 reuseport;
+                    server_name mcfly-nginx.io;
+                    error_log /dev/stdout "#{ERROR_LOG_LEVEL}";
+                    access_log /dev/stdout json_ecs;
+                    location /test {
+                      default_type text/html;
+                      return 200 "<!DOCTYPE html><h2>OK!</h2>\n";
+                    }
+                    location / {
+                      proxy_pass http://127.0.0.1:80;
+                    }
+                }
+            }
+
