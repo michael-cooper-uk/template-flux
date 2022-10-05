@@ -71,7 +71,7 @@ data:
       hosts:
         - host: "mcfly.dev.oceanusorigin.com"
       tls:
-        - secretName: star-oceanusorigin-tls-secret
+        - secretName: star-oceanusorigin-tls-doofer
           hosts:
             - "mcfly.dev.oceanusorigin.com"
 
