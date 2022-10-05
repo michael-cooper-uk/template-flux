@@ -181,7 +181,7 @@ data:
                 server {
                     listen 8080 reuseport;
                     server_name mcfly-nginx.io;
-                    error_log /dev/stdout "#{ERROR_LOG_LEVEL}";
+                    error_log /dev/stdout "debug";
                     access_log /dev/stdout json_ecs;
                     location /test {
                       default_type text/html;
